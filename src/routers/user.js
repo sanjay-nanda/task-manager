@@ -7,9 +7,11 @@ router.post('/users', async (req, res) => {
     const user = new User(req.body);
     try{
         await user.save();
-        res.status(201).send(
+        const token = await user.generateAuthToken();
+        res.send(
             {
-                status: "Successfully Saved"
+                user,
+                token
             }
         )
     }
@@ -44,7 +46,19 @@ router.get('/users/:id', async (req, res) => {
     }
 })
 
-
+router.post('/users/login', async (req, res) => {
+    
+    try{
+        const user = await User.findByCredentials(req.body.email, req.body.password);
+        const token = await user.generateAuthToken();
+        res.send({
+            user, token
+        });
+    } catch(e) {
+        res.status(400).send(e);
+    }
+    
+})
 
 router.patch('/users/:id', async (req, res) => {
     const updates = Object.keys(req.body);

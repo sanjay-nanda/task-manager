@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const validator = require('validator');
 const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken');
 
 const userSchema = new mongoose.Schema({
     name: {
@@ -11,6 +12,7 @@ const userSchema = new mongoose.Schema({
     },
     email: {
         type: String,
+        unique: true,
         required: true,
         lowercase: true,
         trim: true,
@@ -31,10 +33,45 @@ const userSchema = new mongoose.Schema({
     },
     age: {
         type: Number,
-        default: 0
-    }
+        default: 0,
+        validate(value) {
+            if (value < 0) throw new Error('Age must be a positive number')
+        }
+    },
+    tokens: [{
+        token: {
+            type: String,
+            required: true
+        }
+    }]
 })
 
+// use the normal function instead of the arrow function
+// the arrow function will not bind with the methods or statistics
+//methods are used for fns on the instances
+userSchema.methods.generateAuthToken = async function () {
+    const user = this
+    const token = jwt.sign({ _id: user._id.toString()}, 'thisisthetaskmanagerapp')
+
+    user.tokens = user.tokens.concat({token})
+    await user.save()
+    return token
+}
+
+//statics are used for the Models
+userSchema.statics.findByCredentials = async (email, password) => {
+    const user = await User.findOne({ email });
+
+    if(!user) throw new Error('Unable to Login');
+    
+    const isMatch = await bcrypt.compare(password, user.password)
+    
+    if(!isMatch) throw new Error('Unable to Login')
+
+    return user; 
+}
+
+//hashing password
 userSchema.pre('save', async function(next) {
     const user = this
 

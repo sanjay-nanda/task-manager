@@ -3,12 +3,20 @@ require('../db/mongoose')
 const User = require('../models/user')
 const router = new express.Router()
 
+//this is for the auth middleware
+//this function can be given as input to individual routes
+//so that only when the auth fn is returned (next()) the route will execute
+const auth = require('../middleware/auth')
+
+//we use the getPublicProfile function defined on the userSchema.methods
+//to remove the sensitive info about the user and just send the token and 
+//some info about the user currentl logged in
 router.post('/users', async (req, res) => {
     const user = new User(req.body);
     try{
         await user.save();
         const token = await user.generateAuthToken();
-        res.send(
+        res.status(201).send(
             {
                 user,
                 token
@@ -17,32 +25,6 @@ router.post('/users', async (req, res) => {
     }
     catch(e) {
         res.send(e);
-    }
-})
-
-router.get('/users', async (req, res) => {
-    try{
-    const users = await User.find({});
-        res.status(201).send({
-            users: users
-        })
-    } catch (e) {
-        res.status(500).send();
-    }
-})
-
-router.get('/users/:id', async (req, res) => {
-    const _id = req.params.id;
-    try{
-        const user = await User.findById(_id);
-        if(!user){
-            return res.status(404).send()
-        }
-        res.status(200).send({
-            user: user
-        })
-    } catch(e) {
-        res.status(401).send(e);
     }
 })
 
@@ -57,10 +39,38 @@ router.post('/users/login', async (req, res) => {
     } catch(e) {
         res.status(400).send(e);
     }
-    
 })
 
-router.patch('/users/:id', async (req, res) => {
+router.post('/users/logout', auth, async (req, res) => {
+    try {
+        req.user.tokens = req.user.tokens.filter((token) => token.token !== req.token)
+        
+        await req.user.save()
+
+        res.status(200).send(req.user);
+
+    } catch (e) {
+        res.status(500).send(e);
+    }
+})
+
+
+router.get('/users/me', auth, async (req, res) => {
+    res.send(req.user);
+})
+
+router.post('/users/logoutAll', auth, async (req, res) => {
+    try{
+        req.user.tokens = []
+
+        await req.user.save()
+        res.status(200).send(req.user);
+    } catch (e) {
+        res.status(500).send(e)
+    }
+})
+
+router.patch('/users/me', auth, async (req, res) => {
     const updates = Object.keys(req.body);
     const allowedUpdates = ['name', 'email', 'password', 'age']
     const isValidUpdate = updates.every((update) => allowedUpdates.includes(update))
@@ -72,19 +82,12 @@ router.patch('/users/:id', async (req, res) => {
     }
     try {
 
-        const user = await User.findById(req.params.id);
+        updates.forEach((update) => req.user[update] = req.body[update]);
 
-        updates.forEach((update) => user[update] = req.body[update]);
+        await req.user.save();
 
-        await user.save();
-
-        //Using this method does not save the model, thus we can't hash the passwords
-        //Thus we need to find the user and update seperately and save it.
-        //otherwise it wont trigger the save function in the userSchema's middleware.
-        //const user = await User.findByIdAndUpdate(req.params.id, req.body, {new: true, runValidators: true})
-        if(!user) return res.status(404).send();
         res.send({
-            user: user
+            user: req.user
         })
 
     } catch(e) {
@@ -92,16 +95,12 @@ router.patch('/users/:id', async (req, res) => {
     }
 })
 
-router.delete('/users/:id', async (req, res) => {
-    const _id = req.params.id;
+router.delete('/users/me', auth, async (req, res) => {
     try {
-        const user = await User.findByIdAndDelete(_id);
-        if(!user) return res.status(404).send();
-        res.send({
-            deletedUser: user
-        })
+        await req.user.remove();
+        res.send(req.user);
     } catch(e) {
-        res.status(500).send();
+        res.status(500).send(e);
     }
 })
 
